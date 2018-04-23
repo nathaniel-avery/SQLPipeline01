@@ -1,0 +1,142 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "Test AWS Template of a single EC2 Instance w/ Docker Installed",
+
+    "Parameters" : {
+        "SecKey": {
+            "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+              "Type": "AWS::EC2::KeyPair::KeyName",
+             "ConstraintDescription" : "must be the name of an existing EC2 KeyPair."
+            }
+     },
+
+    "Resources": {
+        "MyEC2Instance": {
+            "Type": "AWS::EC2::Instance",
+            "Properties": {
+                "AvailabilityZone": "us-east-1d",
+                "ImageId": "ami-2452275e",
+                "InstanceType": "t2.medium",
+                "KeyName": {"Ref" : "SecKey"},
+                "SecurityGroups": [
+                    {
+                        "Ref": "SQLBambooPublicSG"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "Name",
+                        "Value": "SQL_Bamboo_Pipeline_v1"
+                    }
+                ],
+                "UserData": {
+                    "Fn::Base64": {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "#!/bin/bash -v\n",
+                                "yum install -y docker\n",
+                                "sudo usermod -a -G docker ec2-user\n",
+                                "sudo dockerd&\n",
+                                "docker pull microsoft/mssql-server-linux:2017-GA\n",
+                                "docker pull microsoft/mssql-server-linux:2017-CU1\n",
+                                "docker pull microsoft/mssql-server-linux:2017-CU2\n",
+                                "mkdir /opt/sqldata\n",
+                                "chmod 777 /opt/sqldata\n",
+                                "docker run -e 'ACCEPT_EULA=Y' -e 'MSSQL_SA_PASSWORD=Pa33word' -p1401:1433 -v /opt/sqldata:/var/opt/mssql --name sql1 -d microsoft/mssql-server-linux:2017-GA\n",
+                                "docker stop sql1\n",
+                                "docker run -e 'ACCEPT_EULA=Y' -e 'MSSQL_SA_PASSWORD=Pa33word' -p1402:1433 -v /opt/sqldata:/var/opt/mssql --name sql2 -d microsoft/mssql-server-linux:2017-CU1\n",
+                                "docker stop sql2\n",
+                                "docker run -e 'ACCEPT_EULA=Y' -e 'MSSQL_SA_PASSWORD=Pa33word' -p1403:1433 -v /opt/sqldata:/var/opt/mssql --name sql3 -d microsoft/mssql-server-linux:2017-CU2\n",
+                                "docker exec -t sql3 /opt/mssql-tools/bin/sqlcmd -S localhost -U sa -P Pa33word -Q \"CREATE DATABASE [TESTDB1] CONTAINMENT = NONE ON PRIMARY ( NAME = N'TESTDB1', FILENAME = N'/var/opt/mssql/data/TESTDB1.mdf') LOG ON ( NAME = N'TESTDB1_log', FILENAME = N'/var/opt/mssql/data/TESTDB1_log.ldf')\"\n",
+                                "docker exec -t sql3 /opt/mssql-tools/bin/sqlcmd -d TESTDB1 -S localhost -U sa -P Pa33word -Q \"CREATE TABLE [dbo].[Customers]( [fname] [varchar](50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL, [lname] [varchar](50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,  [state] [varchar](50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL) ON [PRIMARY]\"\n",
+                                "docker exec -t sql3 /opt/mssql-tools/bin/sqlcmd -d TESTDB1 -S localhost -U sa -P Pa33word -Q \"INSERT INTO Customers values ('Bruce', 'Wayne','Gotham'); INSERT INTO Customers values ('Clark', 'Kent','Metropolis');INSERT INTO Customers values ('Barry', 'Allen','Central City')\"\n"
+                            ]
+                        ]
+                    }
+                }
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "c88ec257-3f85-40c3-821f-2adfe5de5230"
+                }
+            }
+        },
+        "SQLBambooPublicSG": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "Enable SSH and SQL Server Access",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "1401",
+                        "ToPort": "1401",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "1402",
+                        "ToPort": "1402",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "1403",
+                        "ToPort": "1403",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            },
+            "Metadata": {
+                "AWS::CloudFormation::Designer": {
+                    "id": "fab12a04-a4df-4a85-bb37-dc965edf6e84"
+                }
+            }
+        }
+    
+    },
+    "Outputs": {
+            "InstanceId": {
+                "Description": "InstanceId of the newly created EC2 instance",
+                "Value": {
+                    "Ref": "MyEC2Instance"
+                }
+            },
+            "AZ": {
+                "Description": "Availability Zone of the newly created EC2 instance",
+                "Value": {
+                    "Fn::GetAtt": [
+                        "MyEC2Instance",
+                        "AvailabilityZone"
+                    ]
+                }
+            },
+            "PublicDNS": {
+                "Description": "Public DNSName of the newly created EC2 instance",
+                "Value": {
+                    "Fn::GetAtt": [
+                        "MyEC2Instance",
+                        "PublicDnsName"
+                    ]
+                }
+            },
+            "PublicIP": {
+                "Description": "Public IP address of the newly created EC2 instance",
+                "Value": {
+                    "Fn::GetAtt": [
+                        "MyEC2Instance",
+                        "PublicIp"
+                    ]
+                }
+            }
+  
+        }
+    }
+
+
